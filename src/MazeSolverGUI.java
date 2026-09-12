@@ -20,6 +20,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -34,6 +35,7 @@ public class MazeSolverGUI extends JFrame {
     private final JSpinner rowsSpinner = new JSpinner(new SpinnerNumberModel(15, 2, 80, 1));
     private final JSpinner colsSpinner = new JSpinner(new SpinnerNumberModel(20, 2, 80, 1));
     private final JTextField seedField = new JTextField(12);
+    private final JComboBox<String> genAlgoCombo = new JComboBox<>(new String[]{"Backtracking", "Prim's"});
     private final JLabel statusLabel = new JLabel(" ");
 
     MazeSolverGUI() {
@@ -67,6 +69,9 @@ public class MazeSolverGUI extends JFrame {
         newSeedButton.addActionListener(e -> seedField.setText(Long.toString(new Random().nextLong())));
         controls.add(newSeedButton);
 
+        controls.add(new JLabel("Generation:"));
+        controls.add(genAlgoCombo);
+
         JButton generateButton = new JButton("Generate");
         generateButton.addActionListener(e -> generate());
         controls.add(generateButton);
@@ -85,12 +90,15 @@ public class MazeSolverGUI extends JFrame {
             seedField.setText(Long.toString(seed));
         }
 
+        boolean usePrims = genAlgoCombo.getSelectedItem().equals("Prim's");
         Maze maze = new Maze(rows, cols, seed);
-        maze.generateBacktracking();
+        if (usePrims) maze.generatePrims();
+        else maze.generateBacktracking();
         mazePanel.setMaze(maze);
         pack();
 
-        statusLabel.setText("Generated with: backtracking  (" + rows + "x" + cols + ", seed " + seed + ")");
+        statusLabel.setText("Generated with: " + (usePrims ? "prims" : "backtracking")
+                + "  (" + rows + "x" + cols + ", seed " + seed + ")");
     }
 
     public static void main(String[] args) {
@@ -189,6 +197,34 @@ class Maze {
             removeWall(current, pick.cell(), pick.dir());
             pick.cell().visited = true;
             stack.push(pick.cell());
+        }
+    }
+
+    // Randomized Prim's: grow a frontier of cells touching the maze so far;
+    // each step, pull a random frontier cell in and connect it back to the
+    // maze. Tends to produce more short dead ends than backtracking does.
+    void generatePrims() {
+        resetGenerationState();
+        Cell start = startCell();
+        start.visited = true;
+        List<Cell> frontier = new ArrayList<>();
+        for (Edge e : gridNeighbors(start)) frontier.add(e.cell());
+
+        while (!frontier.isEmpty()) {
+            int idx = rng.nextInt(frontier.size());
+            Cell cell = frontier.remove(idx);
+            if (cell.visited) continue; // could've been queued twice
+
+            List<Edge> visitedNeighbors = new ArrayList<>();
+            for (Edge e : gridNeighbors(cell))
+                if (e.cell().visited) visitedNeighbors.add(e);
+            Edge chosen = visitedNeighbors.get(rng.nextInt(visitedNeighbors.size()));
+            removeWall(cell, chosen.cell(), chosen.dir());
+            cell.visited = true;
+
+            for (Edge e : gridNeighbors(cell))
+                if (!e.cell().visited && !frontier.contains(e.cell()))
+                    frontier.add(e.cell());
         }
     }
 
