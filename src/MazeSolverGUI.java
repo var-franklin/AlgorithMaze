@@ -1,9 +1,18 @@
 // MazeSolverGUI.java —
 //
-// First interactive phase: a resizable Swing window that draws a maze
-// graphically (walls as lines, start/end as colored cells) and lets you
-// generate a new one with adjustable rows, columns, and seed. Only
-// randomized backtracking exists so far.
+// Important Additions:
+//   - resizable Swing window that draws a maze graphically
+//   - Only randomized backtracking exists so far
+//
+//   - Maze.generatePrims(): randomized Prim's algorithm
+//   - A "Generation" dropdown to pick Backtracking vs Prim's
+//
+//   - Maze.braid(): knocks down one extra wall at some fraction of dead ends
+//   - A "Braid (add loops)" checkbox, applied after generation
+//   -- In a "perfect" maze (no loops) there's only ever one path between any
+//         two cells, so DFS/BFS/A* all end up finding the identical route.
+//         Braiding adds loops so different solvers can legitimately disagree
+//         on path length once solving is introduced.
 
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
@@ -20,6 +29,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -36,6 +46,7 @@ public class MazeSolverGUI extends JFrame {
     private final JSpinner colsSpinner = new JSpinner(new SpinnerNumberModel(20, 2, 80, 1));
     private final JTextField seedField = new JTextField(12);
     private final JComboBox<String> genAlgoCombo = new JComboBox<>(new String[]{"Backtracking", "Prim's"});
+    private final JCheckBox braidCheckbox = new JCheckBox("Braid (add loops)");
     private final JLabel statusLabel = new JLabel(" ");
 
     MazeSolverGUI() {
@@ -71,6 +82,7 @@ public class MazeSolverGUI extends JFrame {
 
         controls.add(new JLabel("Generation:"));
         controls.add(genAlgoCombo);
+        controls.add(braidCheckbox);
 
         JButton generateButton = new JButton("Generate");
         generateButton.addActionListener(e -> generate());
@@ -91,14 +103,17 @@ public class MazeSolverGUI extends JFrame {
         }
 
         boolean usePrims = genAlgoCombo.getSelectedItem().equals("Prim's");
+        boolean braid = braidCheckbox.isSelected();
+
         Maze maze = new Maze(rows, cols, seed);
         if (usePrims) maze.generatePrims();
         else maze.generateBacktracking();
+        if (braid) maze.braid(0.5);
         mazePanel.setMaze(maze);
         pack();
 
         statusLabel.setText("Generated with: " + (usePrims ? "prims" : "backtracking")
-                + "  (" + rows + "x" + cols + ", seed " + seed + ")");
+                + (braid ? " (braided)" : "") + "  (" + rows + "x" + cols + ", seed " + seed + ")");
     }
 
     public static void main(String[] args) {
@@ -225,6 +240,25 @@ class Maze {
             for (Edge e : gridNeighbors(cell))
                 if (!e.cell().visited && !frontier.contains(e.cell()))
                     frontier.add(e.cell());
+        }
+    }
+
+    // Knocks down one extra wall at some fraction of dead ends, turning a
+    // "perfect" maze into one with loops. Without this, every solver finds
+    // the identical path, since there's only one to find.
+    void braid(double probability) {
+        for (Cell cell : cells) {
+            int wallCount = 0;
+            for (boolean w : cell.wall) if (w) wallCount++;
+            if (wallCount != 3) continue; // only touch dead ends
+            if (rng.nextDouble() >= probability) continue;
+
+            List<Edge> options = new ArrayList<>();
+            for (Edge e : gridNeighbors(cell))
+                if (cell.wall[e.dir().ordinal()]) options.add(e);
+            if (options.isEmpty()) continue;
+            Edge pick = options.get(rng.nextInt(options.size()));
+            removeWall(cell, pick.cell(), pick.dir());
         }
     }
 
